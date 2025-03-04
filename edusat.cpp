@@ -1,4 +1,4 @@
-﻿#include "PBSolver.h"
+#include "PBSolver.h"
 #include <algorithm>
 #include <numeric>
 
@@ -294,6 +294,9 @@ void PBSolver::read_pb(std::ifstream& in) {
 
 	set_nvars(vars);
 	set_nconstraints(constraints);
+	set_noldconstraints(constraints);
+
+
 	initialize();
 
 	// Ensure we skip any remaining characters on the current line
@@ -361,7 +364,13 @@ void PBSolver::add_constraint(Constraint& c, int l, int r) {
 	c.rw_set(r);
 	int loc = static_cast<int>(pbConstraints.size());  // the first is in location 0 in cnf
 	int size = c.constraint_size();
-
+	if (c.get_rhs() < 0)
+		unsat = true; 
+	//std::unordered_set<int> watches_set = findWatchesSet(c);
+	//for (int lit : watches_set) {
+	//	watches[lit].push_back(loc);
+	//}
+	//c.set_watches_set(watches_set);
 	watches[c.lit(l)].push_back(loc);
 	watches[c.lit(r)].push_back(loc);
 	pbConstraints.push_back(c);
@@ -505,7 +514,13 @@ void PBSolver::bumpLitScore(int lit_idx) {
 
 void PBSolver::add_unary_constraint(Constraint c) {
 	if (c.constraint_size() != 1) Abort("Unary constraint should have only one literal", 1);
-	unaries.push_back(c);
+	c.lw_set(0);
+	c.rw_set(0);
+	int loc = static_cast<int>(pbConstraints.size());  // the first is in location 0 in cnf
+
+	watches[c.lit(0)].push_back(loc);
+	pbConstraints.push_back(c);
+
 }
 
 int PBSolver::getVal(Var v) {
@@ -594,10 +609,55 @@ Apply_decision:
 	return SolverState::UNDEF;
 }
 
+//inline PBConstraintState PBSolver::next_not_false(Constraint& c,int c_id, Lit last_assert_lit, int& loc) {
+//	if (verbose_now()) cout << "pb_next_not_false" << endl;
+//	// Constraint is SAT if LHS ≤ RHS
+//	std::unordered_set<int> watch_set =  c.get_watch_set();
+//	int lhs = c.get_lhs();
+//	int rhs = c.get_rhs();
+//	if (lhs <= rhs)
+//		return PBConstraintState::PB_SAT;
+//
+//	// Constraint is UNSAT if LHS > RHS (exceeds the allowed max)
+//	if (lhs > rhs) {
+//		if (verbose_now()) {
+//			PBConstraintState();
+//			cout << " is conflicting" << endl;
+//		}
+//		return PBConstraintState::PB_UNSAT;
+//	}
+//	if (watch_set.find(last_assert_lit) != watch_set.end())
+//	{
+//		for (int lit : watch_set) {
+//			if (lit != last_assert_lit)
+//			{
+//				int coeff = c.get_coefficients()[lit];
+//				if (coeff > lhs - rhs)
+//				{
+//					std::cout << "propagate " << l2rl(lit) << " with coeff " << coeff << "false" << std::endl;
+//					state_pb[l2v(lit)] = Neg(lit) ? VarState::V_TRUE : VarState::V_FALSE;
+//					assert_lit(negate(lit));
+//					antecedent[l2v(lit)] = c_id;
+//					watch_set.erase(last_assert_lit);
+//					auto& watch_list = watches[last_assert_lit];  // Get reference to vector
+//
+//					watch_list.erase(std::remove(watch_list.begin(), watch_list.end(), loc), watch_list.end());
+//				}
+//			}
+//		}
+//	}
+//
+//	watch_set.erase(last_assert_lit);
+//	auto& watch_list = watches[last_assert_lit];  // Get reference to vector
+//
+//	watch_list.erase(std::remove(watch_list.begin(), watch_list.end(), loc), watch_list.end());
+//}
+
+
+
 inline PBConstraintState Constraint::next_not_false(bool is_left_watch, Lit other_watch, bool binary, int& loc) {
 	if (verbose_now()) cout << "pb_next_not_false" << endl;
 
-	
 
 	// Constraint is SAT if LHS ≤ RHS
 	if (lhs <= rhs)
@@ -647,7 +707,7 @@ inline PBConstraintState Constraint::next_not_false(bool is_left_watch, Lit othe
 		}
 		return PBConstraintState::PB_UNSAT;
 	case LitState::L_UNASSIGNED:
-		if ((lhs + coeff_other) > rhs)  // If setting `other_watch` to false is necessary
+		if (!other_watch || !binary)  // If setting `other_watch` to false is necessary
 			return PBConstraintState::PB_UNIT;  // Must set `other_watch = false`
 		return PBConstraintState::PB_UNDEF;  // Unresolved, keep watching
 	case LitState::L_SAT:
@@ -681,12 +741,17 @@ void PBSolver::test() { // tests that each clause is watched twice.
 	}
 }
 
+
 SolverState PBSolver::BCP() {
 
 	if (verbose_now()) cout << "BCP" << endl;
 	if (verbose_now()) cout << "qhead = " << qhead << " trail-size = " << trail_pb.size() << endl;
+
+	if (unsat)
+		return SolverState::UNSAT;
 	
 	while (qhead < trail_pb.size()) {
+		Lit lit = trail_pb[qhead];
 		Lit NegatedLit = negate(trail_pb[qhead++]);
 		Assert(lit_state(NegatedLit) == LitState::L_UNSAT);
 		if (verbose_now()) cout << "propagating " << l2rl(negate(NegatedLit)) << endl;
@@ -695,6 +760,32 @@ SolverState PBSolver::BCP() {
 		int new_watch_list_idx = watches[NegatedLit].size() - 1; // Since we are traversing the watch_list backwards, this index goes down.
 		new_watch_list.resize(watches[NegatedLit].size());
 
+		for (vector<int>::reverse_iterator it = watches[lit].rbegin(); it != watches[lit].rend() && conflicting_constraint_idx < 0; ++it) {
+			Constraint& c = pbConstraints[*it];
+			std::vector<int>  coefficients = c.get_coefficients();
+			clause_t literals = c.get_literals();
+			int lhs = c.get_lhs();
+			int rhs = c.get_rhs();
+			int remaining_slack = rhs - lhs;
+			if (remaining_slack < 0)
+			{
+				if (verbose_now()) print_state();
+				if (verbose_now()) cout << "conflict" << endl;
+				if (dl_pb == 0 || unsat) return SolverState::UNSAT;
+				conflicting_constraint_idx = *it;  // this will also break the loop
+				if (conflicting_constraint_idx >= 0) return SolverState::CONFLICT;
+				
+			
+			}
+			for (size_t i = 0; i < c.constraint_size(); ++i) {
+				if ((coefficients[i] >= remaining_slack) && (lit_state(literals[i]) == LitState::L_UNASSIGNED))  {
+					std::cout << "propagating " << l2rl(literals[i]) << " with coeff " << coefficients[i] << std::endl;
+					state_pb[l2v(literals[i])] = Neg(literals[i]) ? VarState::V_TRUE : VarState::V_FALSE;
+					assert_lit(negate(literals[i]));
+					antecedent[l2v(literals[i])] = *it;
+				}
+			}
+		}
 
 		for (vector<int>::reverse_iterator it = watches[NegatedLit].rbegin(); it != watches[NegatedLit].rend() && conflicting_constraint_idx < 0; ++it) {
 			Constraint& c = pbConstraints[*it];
@@ -776,7 +867,7 @@ int PBSolver::analyze(const Constraint& conflictConstraint) {
 	for (auto& term : learned_constraint.get_terms()) {
 		Lit lit = v2l(term.second);
 		v = l2v(lit);
-
+		var_to_pb_constraints[v].push_back(pbConstraints.size());
 		if (!marked[v]) {
 			marked[v] = true;
 			if (dlevel_pb[v] == dl_pb) ++resolve_num;
@@ -824,10 +915,10 @@ void PBSolver::backtrack(int k) {
 		if (dlevel_pb[v]) { // we need the condition because of learnt unary clauses. In that case we enforce an assignment with dlevel = 0.
 			state_pb[v] = VarState::V_UNASSIGNED;
 			for (int constraint_idx : var_to_pb_constraints[v]) {
+				if (constraint_idx >= noldconstraints) continue; // we do not want to backtrack on the learned constraints.
 				Constraint& pbc = pbConstraints[constraint_idx];
 				int lhs = pbc.get_lhs();
 				std::vector<std::pair<int, int>> terms = pbc.get_terms();
-
 				for (auto& term : terms) {
 					if (term.second == *it){
 						lhs -= term.first;
@@ -846,6 +937,16 @@ void PBSolver::backtrack(int k) {
 	qhead = trail_pb.size();
 	dl_pb = k;
 	assert_lit(asserted_lit);
+	for (size_t i = 0; i < noldconstraints; ++i) {
+		Constraint& c = pbConstraints[i];
+		if (std::find(watches[c.get_lw_lit()].begin(), watches[c.get_lw_lit()].end(), i) == watches[c.get_lw_lit()].end()) {
+			watches[c.get_lw_lit()].push_back(i);
+		}
+		if (std::find(watches[c.get_rw_lit()].begin(), watches[c.get_rw_lit()].end(), i) == watches[c.get_rw_lit()].end()) {
+			watches[c.get_rw_lit()].push_back(i);
+		}
+	}
+	set_noldconstraints(pbConstraints.size());
 	antecedent[l2v(asserted_lit)] = pbConstraints.size() - 1;
 	conflicting_constraint_idx = -1;
 }
@@ -867,11 +968,14 @@ void PBSolver::validate_assignment() {
 		}
 	}
 	for (auto it = unaries.begin(); it != unaries.end(); ++it) {
-		if (lit_state(it->get_literals()[1]) != LitState::L_SAT)
+		Lit lit = it->get_literals()[0];
+		if (it->get_lhs() > it->get_rhs())
 			Abort("Assignment validation failed (unaries)", 3);
 	}
 	cout << "Assignment validated" << endl;
 }
+
+
 
 void PBSolver::restart() {
 	if (verbose_now()) cout << "restart" << endl;
@@ -1002,12 +1106,12 @@ Constraint PBSolver::findConflictSubset(Constraint constraint) {
 		if ((state_pb[var] == VarState::V_TRUE &&  !(Neg(lit))) ||
 			(state_pb[var] == VarState::V_FALSE && (Neg(lit)))) {
 
-			conflictConstraint.insert_term(1,var);
+			conflictConstraint.insert_term(1,lit);
 			accumulated_sum += coeff;
 			rhs_c += 1;
 
 
-			std::cout << "Adding x" << var << "\n";
+			std::cout << "Adding x" << lit << "\n";
 
 			if (accumulated_sum > rhs) {
 				break;
@@ -1025,6 +1129,8 @@ Constraint PBSolver::findConflictSubset(Constraint constraint) {
 
 	return conflictConstraint;
 }
+
+
 
 
 
@@ -1135,7 +1241,7 @@ int main(int argc, char** argv){
 		std::cerr << "Error: Cannot open input.pb file!\n";
 		return 1;
 	}
-	
+// TODO : watch on the new constraint and the conflict 
 	S.read_pb(file);
 	file.close();
 	S.solve();	
