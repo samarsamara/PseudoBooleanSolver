@@ -243,11 +243,11 @@ void PBSolver::processConstraint(const std::string& line, int& constraint_index)
 
 		// Process the ≥ part:
 		Constraint c_geq = c;
-		constraint_index++;
-		std::vector<pair<int, int >> terms = c_geq.get_terms();
-		for (auto& term : terms ) {
-			var_to_pb_constraints[term.second].push_back(constraint_index);
-		}
+		//constraint_index++;
+		//std::vector<pair<int, int >> terms = c_geq.get_terms();
+		//for (auto& term : terms ) {
+		//	var_to_pb_constraints[term.second].push_back(constraint_index);
+		//}
 		normalizePBConstraint(c_geq, true);  // normalize as ≥
 		if (c_geq.constraint_size() == 1) {
 			add_unary_constraint(c_geq);
@@ -626,6 +626,30 @@ void PBSolver::test() { // tests that each clause is watched twice.
 	}
 }
 
+PBConstraintState PBSolver::propagate_assignment(int constraint_idx) {
+	if (verbose_now()) cout << "propagate_assignment" << endl;
+
+	Constraint c = pbConstraints[constraint_idx];
+
+	clause_t literals = c.get_literals();
+	std::vector<int> coefficients = c.get_coefficients();
+	int rhs = c.get_rhs();
+	int lhs = c.get_lhs();
+	int remaning_slack = rhs - lhs;
+	int true_sum = 0;
+
+
+	if (remaning_slack < 0) return PBConstraintState::PB_UNSAT;
+	for (int i = 0; i < c.constraint_size(); ++i) {
+		if (S.lit_state(literals[i]) == LitState::L_UNASSIGNED && coefficients[i] > remaning_slack) {
+			assert_lit(negate(literals[i]));
+			antecedent[l2v(literals[i])] = constraint_idx;
+
+		}
+	}
+	if (remaning_slack >= 0) return  PBConstraintState::PB_SAT;
+	return  PBConstraintState::PB_UNDEF;
+}
 
 SolverState PBSolver::BCP() {
 
@@ -637,92 +661,36 @@ SolverState PBSolver::BCP() {
 
 	while (qhead < trail_pb.size()) {
 		Lit lit = trail_pb[qhead];
+		int var = l2v(lit);
 		Lit NegatedLit = ::negate(trail_pb[qhead++]);
 		Assert(lit_state(NegatedLit) == LitState::L_UNSAT);
 		if (verbose_now()) cout << "propagating " << l2rl(::negate(NegatedLit)) << endl;
 
-		vector<int> new_watch_list; // The original watch list minus those clauses that changed a watch. The order is maintained. 
-		int new_watch_list_idx = watches[NegatedLit].size() - 1; // Since we are traversing the watch_list backwards, this index goes down.
-		new_watch_list.resize(watches[NegatedLit].size());
-
-		for (vector<int>::reverse_iterator it = watches[lit].rbegin(); it != watches[lit].rend() && conflicting_constraint_idx < 0; ++it) {
-			Constraint& c = pbConstraints[*it];
-			std::vector<int>  coefficients = c.get_coefficients();
-			clause_t literals = c.get_literals();
-			int lhs = c.get_lhs();
-			int rhs = c.get_rhs();
-			int remaining_slack = rhs - lhs;
-			if (remaining_slack < 0)
-			{
-				if (verbose_now()) print_state();
-				if (verbose_now()) cout << "conflict" << endl;
-				/*dl_pb == 0 ||*/ if ( unsat) return SolverState::UNSAT;
-				conflicting_constraint_idx = *it;  // this will also break the loop
-				if (conflicting_constraint_idx >= 0) return SolverState::CONFLICT;
-
-
-			}
-			for (size_t i = 0; i < c.constraint_size(); ++i) {
-				if ((coefficients[i] >= remaining_slack) && (lit_state(literals[i]) == LitState::L_UNASSIGNED)) {
-					std::cout << "propagating " << l2rl(literals[i]) << " with coeff " << coefficients[i] << std::endl;
-					state_pb[l2v(literals[i])] = Neg(literals[i]) ? VarState::V_TRUE : VarState::V_FALSE;
-					assert_lit(::negate(literals[i]));
-					antecedent[l2v(literals[i])] = *it;
-				}
-			}
-		}
-
-		for (vector<int>::reverse_iterator it = watches[NegatedLit].rbegin(); it != watches[NegatedLit].rend() && conflicting_constraint_idx < 0; ++it) {
-			Constraint& c = pbConstraints[*it];
-			Lit l_watch = c.get_lw_lit(),
-				r_watch = c.get_rw_lit();
-			bool binary = c.constraint_size() == 2;
-			bool is_left_watch = (l_watch == NegatedLit);
-			Lit other_watch = is_left_watch ? r_watch : l_watch;
-			int NewWatchLocation;
-			PBConstraintState res = c.next_not_false(is_left_watch, other_watch, binary, NewWatchLocation);
-			if (res != PBConstraintState::PB_UNDEF) new_watch_list[new_watch_list_idx--] = *it; //in all cases but the move-watch_lit case we leave watch_lit where it is
+		for (int constraint_idx : var_to_pb_constraints[var]) {
+			PBConstraintState res = propagate_assignment(constraint_idx);
 			switch (res) {
-			case PBConstraintState::PB_UNSAT: { // conflict				
-				if (verbose_now()) print_state();
-				if (dl_pb == 0) return SolverState::UNSAT;
-				conflicting_constraint_idx = *it;  // this will also break the loop
-				int dist = distance(it, watches[NegatedLit].rend()) - 1; // # of entries in watches[NegatedLit] that were not yet processed when we hit this conflict. 
-				// Copying the remaining watched clauses:
-				for (int i = dist - 1; i >= 0; i--) {
-					new_watch_list[new_watch_list_idx--] = watches[NegatedLit][i];
+				case PBConstraintState::PB_UNSAT: { // conflict				
+					if (verbose_now()) print_state();
+					if (dl_pb == 0 || unsat) return SolverState::UNSAT;
+					conflicting_constraint_idx = constraint_idx;  // this will also break the loop
+					if (verbose_now()) cout << "conflict" << endl;
+					return SolverState::CONFLICT;
 				}
-				if (verbose_now()) cout << "conflict" << endl;
-				break;
+				case PBConstraintState::PB_SAT:
+					if (verbose_now()) cout << "constraint is sat" << endl;
+					break; // nothing to do when clause has a satisfied literal.
+				case PBConstraintState::PB_UNIT: { // new implication				
+					break;
+				}
+				default: // replacing watch_lit
+					break;
+				}
 			}
-			case PBConstraintState::PB_SAT:
-				if (verbose_now()) cout << "constraint is sat" << endl;
-				break; // nothing to do when clause has a satisfied literal.
-			case PBConstraintState::PB_UNIT: { // new implication				
-				if (verbose_now()) cout << "propagating: ";
-				assert_lit(other_watch);
-				antecedent[l2v(other_watch)] = *it;
-				if (verbose_now()) cout << "new implication <- " << l2rl(other_watch) << endl;
-				break;
-			}
-			default: // replacing watch_lit
-				Assert(NewWatchLocation < static_cast<int>(c.constraint_size()));
-				int new_lit = c.lit(NewWatchLocation);
-				watches[new_lit].push_back(*it);
-				if (verbose_now()) { c.print_real_lits(); cout << " now watched by " << l2rl(new_lit) << endl; }
-			}
-		}
-		// resetting the list of clauses watched by this literal.
-		watches[NegatedLit].clear();
-		new_watch_list_idx++; // just because of the redundant '--' at the end. 		
-		watches[NegatedLit].insert(watches[NegatedLit].begin(), new_watch_list.begin() + new_watch_list_idx, new_watch_list.end());
 
-		//print_watches();
-		if (conflicting_constraint_idx >= 0) return SolverState::CONFLICT;
-		new_watch_list.clear();
+		}
+		return SolverState::UNDEF;
 	}
-	return SolverState::UNDEF;
-}
+
 
 
 /*******************************************************************************************************************
@@ -1033,22 +1001,11 @@ int main(int argc, char** argv) {
 	begin_time = cpuTime();
 	parse_options(argc, argv);
 
-	/*std::ifstream file("real_test.opb");*/
-	//std::ifstream file("data4.opb"); //usat
-	//std::ifstream file("normalized-fir10_trarea_ac.opb");
-	/*std::ifstream file("normalized-dbst_v30_e350_d15_mw10_1.opb.PB06.opb");*/ //usat
-	//std::ifstream file("normalized-cuww1.opb");
-	/*std::ifstream file("normalized-11array_ineq5.opb");*/
-	//std::ifstream file("normalized-11diag_spec_greater.opb");
-	/*std::ifstream file("normalized-15array_ineq10.opb");*/
-	//std::ifstream file("normalized-11diag_spec_less.opb");
-	/*std::ifstream file("normalized-12array_alg_ineq10.opb");*/ //UNSAT
-	//std::ifstream file("normalized-15array_diag_greater.opb");
-	/*std::ifstream file("normalized-air01.0.s.opb");*/  // SAT
-	//std::ifstream file("normalized-robin14.opb");
-	// TODO : watch on the new constraint and the conflict 
-	/*std::ifstream file("normalized-army9.12bt.opb");*/
-	std::ifstream file("normalized-blast-floppy1-8.ucl.opb");
+	std::ifstream file("normalized-dbst_v30_e350_d15_mw10_1.opb.PB06.opb");
+	/*std::ifstream file("normalized-air01.0.s.opb"); */ // SAT
+	//std::ifstream file("normalized-blast-floppy1-8.ucl.opb"); //UNSAT
+	//std::ifstream file("normalized-fpga11_10_sat_pb.cnf.cr.opb"); //SAT
+	//std::ifstream file("normalized-grid4_81.opb"); // UNSAT
 	S.read_pb(file);
 	file.close();
 	S.solve();
