@@ -1,8 +1,16 @@
 #include "PBSolver.h"
 #include <algorithm>
 #include <numeric>
+#include <iostream>
+#include <fstream>
+#include <filesystem>
+#include <string>
 
 PBSolver S;
+
+extern int verbose;
+extern double begin_time;
+extern double timeout;
 
 using namespace std;
 
@@ -10,184 +18,6 @@ inline bool verbose_now() {
 	return verbose > 1;
 }
 
-
-//int Solver::create_variable() {
-//	return ++variable_count; // Increment and return a new variable index
-//}
-//
-//
-//std::vector<Clause> Solver::convert_pb_to_cnf(const std::vector<std::pair<int, int>>& terms, int rhs) {
-//	std::vector<Clause> cnf_clauses;
-//
-//	// Step 1: Initialize buckets
-//	int max_bits = 0;
-//	for (const auto& term : terms) {
-//		int coeff = term.first;
-//		while (coeff > 0) {
-//			coeff >>= 1;
-//			max_bits++;
-//		}
-//	}
-//	std::vector<std::vector<int>> buckets(max_bits);
-//
-//	// Step 2: Fill the buckets
-//	for (const auto& term : terms) {
-//		int coeff = term.first; // Coefficient
-//		create_variable();
-//		int var = term.second;  // Variable
-//		int bit_position = 0;
-//
-//		while (coeff > 0) {
-//			if (coeff & 1) {
-//				buckets[bit_position].push_back(var);
-//			}
-//			coeff >>= 1;
-//			bit_position++;
-//		}
-//	}
-//
-//	// Step 3: Build the adder tree
-//    for (size_t i = 0; i < buckets.size(); ++i) {
-//		std::cout << i << std::endl;
-//		print_buckets(buckets);
-//		while (buckets[i].size() >= 3) {
-//			int a = buckets[i].back(); buckets[i].pop_back();
-//			int b = buckets[i].back(); buckets[i].pop_back();
-//			int c = buckets[i].back(); buckets[i].pop_back();
-//
-//			int sum = create_variable();
-//			int carry = create_variable();
-//
-//			cnf_clauses = add_full_adder_clauses(a, b, c, sum, carry);
-//
-//			buckets[i + 1].push_back(carry);
-//			buckets[i].push_back(sum);
-//		}
-//
-//		if (buckets[i].size() == 2) {
-//			int a = buckets[i].back(); buckets[i].pop_back();
-//			int b = buckets[i].back(); buckets[i].pop_back();
-//
-//			int sum = create_variable();
-//			int carry = create_variable();
-//
-//			add_half_adder_clauses(a, b, sum, carry);
-//
-//			buckets[i + 1].push_back(carry);
-//			buckets[i].push_back(sum);
-//		}
-//	}
-//
-//	// Step 4: Enforce RHS constraint
-//    for (size_t i = rhs + 1; i < buckets.size(); ++i) {
-//		for (int bit : buckets[i]) {
-//			Clause c;
-//			c.insert(-bit); // Negate the bit
-//			cnf_clauses.push_back(c);
-//		}
-//	}
-//
-//	return cnf_clauses;
-//}
-//
-//std::vector<Clause> Solver::add_full_adder_clauses(int a, int b, int c_in, int sum, int c_out) {
-//	// Sum bit clauses
-//	std::vector<Clause> clauses;
-//	Clause c1; // ¬a ∨ ¬b ∨ ¬c_in ∨ s
-//	c1.insert(-a);
-//	c1.insert(-b);
-//	c1.insert(-c_in);
-//	c1.insert(sum);
-//	clauses.push_back(c1);
-//
-//	Clause c2; // a ∨ b ∨ ¬s
-//	c2.insert(a);
-//	c2.insert(b);
-//	c2.insert(-sum);
-//	clauses.push_back(c2);
-//
-//	Clause c3; // b ∨ c_in ∨ ¬s
-//	c3.insert(b);
-//	c3.insert(c_in);
-//	c3.insert(-sum);
-//	clauses.push_back(c3);
-//
-//	Clause c4; // c_in ∨ a ∨ ¬s
-//	c4.insert(c_in);
-//	c4.insert(a);
-//	c4.insert(-sum);
-//	clauses.push_back(c4);
-//
-//	// Carry-out bit clauses
-//	Clause c5; // ¬a ∨ ¬b ∨ c_out
-//	c5.insert(-a);
-//	c5.insert(-b);
-//	c5.insert(c_out);
-//	clauses.push_back(c5);
-//
-//	Clause c6; // ¬b ∨ ¬c_in ∨ c_out
-//	c6.insert(-b);
-//	c6.insert(-c_in);
-//	c6.insert(c_out);
-//	clauses.push_back(c6);
-//
-//	Clause c7; // ¬c_in ∨ ¬a ∨ c_out
-//	c7.insert(-c_in);
-//	c7.insert(-a);
-//	c7.insert(c_out);
-//	clauses.push_back(c7);
-//
-//	Clause c8; // a ∨ ¬c_out
-//	c8.insert(a);
-//	c8.insert(-c_out);
-//	clauses.push_back(c8);
-//
-//	Clause c9; // b ∨ ¬c_out
-//	c9.insert(b);
-//	c9.insert(-c_out);
-//	clauses.push_back(c9);
-//
-//	Clause c10; // c_in ∨ ¬c_out
-//	c10.insert(c_in);
-//	c10.insert(-c_out);
-//	clauses.push_back(c10);
-//	return clauses;
-//
-//}
-//
-//std::vector<Clause> Solver::add_half_adder_clauses(int a, int b, int sum, int c_out) {
-//	std::vector<Clause> clauses;
-//	// Sum bit clauses
-//	Clause c1; //  ¬a ∨ ¬b ∨ s
-//	c1.insert(-a);
-//	c1.insert(-b);
-//	c1.insert(sum);
-//	clauses.push_back(c1);
-//
-//	Clause c2; //  a ∨ b ∨ ¬s
-//	c2.insert(a);
-//	c2.insert(b);
-//	c2.insert(-sum);
-//	clauses.push_back(c2);
-//
-//	// Carry-out bit clauses
-//	Clause c3; // ¬a ∨ ¬b ∨ c_out
-//	c3.insert(-a);
-//	c3.insert(-b);
-//	c3.insert(-c_out);
-//	clauses.push_back(c3);
-//
-//	Clause c4; // a ∨ ¬c_out
-//	c4.insert(a);
-//	c4.insert(-c_out);
-//	clauses.push_back(c4);
-//
-//	Clause c5; // b ∨ ¬c_out
-//	c5.insert(b);
-//	c5.insert(-c_out);
-//	clauses.push_back(c5);
-//	return clauses;
-//}
 
 
 /******************  Reading the CNF ******************************/
@@ -218,248 +48,241 @@ static int parseInt(ifstream& in) {
 	return neg ? -val : val;
 }
 
-//void Solver::read_cnf(ifstream& in) {
-//	int i;
-//	unsigned int vars, clauses, unary = 0;
-//	set<Lit> s;
-//	Clause c;
-//
-//
-//	while (in.peek() == 'c') skipLine(in);
-//
-//	if (!match(in, "p cnf")) Abort("Expecting `p cnf' in the beginning of the input file", 1);
-//	in >> vars; // since vars is int, it reads int from the stream.
-//	in >> clauses;
-//	if (!vars || !clauses) Abort("Expecting non-zero variables and clauses", 1);
-//	cout << "vars: " << vars << " clauses: " << clauses << endl;
-//	cnf.reserve(clauses);
-//
-//	set_nvars(vars);
-//	set_nclauses(clauses);
-//	initialize();
-//
-//	while (in.good() && in.peek() != EOF) {
-//		i = parseInt(in);
-//		if (i == 0) {
-//			c.cl().resize(s.size());
-//			copy(s.begin(), s.end(), c.cl().begin());
-//			switch (c.size()) {
-//			case 0: {
-//				stringstream num;  // this allows to convert int to string
-//				num << cnf_size() + 1; // converting int to string.
-//				Abort("Empty clause not allowed in input formula (clause " + num.str() + ")", 1); // concatenating strings
-//			}
-//			case 1: {
-//				Lit l = c.cl()[0];
-//				// checking if we have conflicting unaries. Sufficiently rare to check it here rather than 
-//				// add a check in BCP. 
-//				if (state[l2v(l)] != VarState::V_UNASSIGNED)
-//					if (Neg(l) != (state[l2v(l)] == VarState::V_FALSE)) {
-//						S.print_stats();
-//						Abort("UNSAT (conflicting unaries for var " + to_string(l2v(l)) + ")", 0);
-//					}
-//				assert_lit(l);
-//				add_unary_clause(l);
-//				break; // unary clause. Note we do not add it as a clause. 
-//			}
-//			default: add_clause(c, 0, 1);
-//			}
-//			c.reset();
-//			s.clear();
-//			continue;
-//		}
-//		if (Abs(i) > vars) Abort("Literal index larger than declared on the first line", 1);
-//		if (VarDecHeuristic == VAR_DEC_HEURISTIC::MINISAT) bumpVarScore(abs(i));
-//		i = v2l(i);
-//		if (ValDecHeuristic == VAL_DEC_HEURISTIC::LITSCORE) bumpLitScore(i);
-//		s.insert(i);
-//	}
-//	if (VarDecHeuristic == VAR_DEC_HEURISTIC::MINISAT) reset_iterators();
-//	cout << "Read " << cnf_size() << " clauses in " << cpuTime() - begin_time << " secs." << endl << "Solving..." << endl;
-//}
-//
+
 #pragma endregion readCNF
 
 
-//void PBSolver::read_pb(std::ifstream& in) {
-//	int vars, constraints;
-//
-//	if (!match(in, "* #variable=")) Abort("Expecting `*' in the input file", 1);
-//	in >> vars;
-//	if (!match(in, " #constraint=")) Abort("No constraints provided", 1);
-//	in >> constraints;
-//
-//	std::cout << "constraints size = " << constraints << "\n";
-//	std::cout << "nvars  = " << vars << "\n";
-//
-//	set_nvars(vars);
-//	set_nconstraints(constraints);
-//	set_noldconstraints(constraints);
-//
-//
-//	initialize();
-//
-//	// Ensure we skip any remaining characters on the current line
-//	in.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-//
-//
-//	//while (in.good() && in.peek() != '*') in.get();
-//	//while (in.good() && in.peek() == '*') skipLine(in);
-//
-//
-//	std::cout << "Starting to read constraints...\n";
-//
-//	// Read process the constraints
-//	std::string token1, token2;
-//	int coef, lit, rhs;
-//	int i = 0;
-//
-//	Constraint c;
-//
-//	while (in.good() && in.peek() != EOF) {
-//		in >> token1 >> token2;
-//		// cout << token1 << token2 << endl;
-//		if (token1 == ">=" || token2 == "=" || token1 == "<=") {
-//			// end of constraint
-//			if (token1 != ">=" && token1 != "<=") Abort("only >= or <= is supported", 1);
-//			rhs = std::stoi(token2);
-//			c.set_rhs(rhs);
-//			std::cout << "constraint before normalization \n";
-//			c.print_constraint();
-//			if(token1 == ">=")
-//				normalizePBConstraint(c, true);
-//			else
-//				normalizePBConstraint(c, false);
-//			add_constraint(c, 0, 1);
-//			c.print_constraint();
-//			i++;
-//			c.reset_coefficients();
-//			c.reset_literals();
-//			c.reset_terms();
-//
-//		}
-//		else {
-//			coef = std::stoi(token1);
-//			lit = std::stoi(token2.substr(1));
-//
-//			if (lit > vars) Abort("Literal index larger than declared on the first line", 1);
-//			if (VarDecHeuristic == VAR_DEC_HEURISTIC::MINISAT) bumpVarScore(lit);
-//
-//			c.insert_term(coef, lit);
-//			var_to_pb_constraints[lit].push_back(i);
-//			var_occurrence_count[lit]++;
-//
-//			if (ValDecHeuristic == VAL_DEC_HEURISTIC::LITSCORE) bumpLitScore(v2l(lit));
-//		}
-//	}
-//	if (VarDecHeuristic == VAR_DEC_HEURISTIC::MINISAT) reset_iterators();
-//	cout << "Read " << constraints << " constraints in " << cpuTime() - begin_time << " secs." << endl << "Solving..." << endl;
-//}
-
 void PBSolver::read_pb(std::ifstream& in) {
-	int vars, constraints;
+	int vars = 0, constraints = 0;
 	std::string line;
 
+	// Process the header and comments until we get to constraints
+	while (std::getline(in, line) && line[0] == '*') {
+		std::cout << "Header/comment line: " << line << std::endl;
 
-	// First line we extract variables and clauses
-	if (!match(in, "* #variable=")) Abort("Expecting `*' in the input file", 1);
-	in >> vars;
-	if (!match(in, " #constraint=")) Abort("No constraints provided", 1);
-	in >> constraints;
+		// Extract variable and constraint counts from the line that has them
+		if (line.find("#variable=") != std::string::npos) {
+			// Format: "* #variable= 200 #constraint= 302 #product= 1248 sizeproduct= 2496"
+			std::istringstream iss(line);
+			std::string token;
 
-	cout << "vars: " << vars << " constraints: " << constraints << endl;
+			// Skip the '*'
+			iss >> token; // This reads "*"
 
+			// Read "#variable="
+			iss >> token;
+			if (token.find("#variable=") != std::string::npos) {
+				// Read the value after "#variable="
+				iss >> vars;
+			}
 
-	// Keep moving until we find constraints
-	while (in.good() && in.peek() != '*') in.get();
-	while (in.good() && in.peek() == '*') skipLine(in);
+			// Read "#constraint="
+			iss >> token;
+			if (token.find("#constraint=") != std::string::npos) {
+				// Read the value after "#constraint="
+				iss >> constraints;
+			}
 
-
-	if (vars <= 0 || constraints <= 0) {
-		Abort("Invalid number of variables or constraints", 1);
+			std::cout << "Extracted: vars = " << vars << ", constraints = " << constraints << std::endl;
+		}
 	}
 
-	std::cout << "constraints size = " << constraints << "\n";
-	std::cout << "nvars  = " << vars << "\n";
+	// Check if we found valid variable and constraint counts
+	if (vars <= 0 || constraints <= 0) {
+		std::cerr << "Error: Could not extract valid variable and constraint counts" << std::endl;
+		Abort("Invalid header information", 1);
+	}
 
 	set_nvars(vars);
 	set_nconstraints(constraints);
 	set_noldconstraints(constraints);
-
 	initialize();
 
 	std::cout << "Starting to read constraints...\n";
 
-	std::string token1, token2;
-	int coef, lit, rhs;
-	Constraint c;
-	int i = 0;
+	// We'll process the current line (if it's not a comment) and then read more lines
+	int constraint_index = 0;
 
-	while (true) {
-		in >> token1;
-
-		// If end of constraint is reached
-		if (token1 == ";") {
-			std::cout << "End of constraint, moving to next line." << std::endl;
-
-
-			// Read next token to continue (avoid skipping the next constraint)
-			if (!(in >> token1)) break; // Exit if EOF
+	// Process the first non-comment line we already read
+	if (!line.empty() && line[0] != '*' && line[0] != 'm') {
+		processConstraint(line, constraint_index);
+		constraint_index++;
+	}
+	/*&& constraint_index*/
+	// Process remaining constraints
+	while (std::getline(in, line) ) {
+		if (line.empty() || line[0] == '*') {
+			continue; // Skip empty lines and comments
 		}
 
-		// Read second token
-		if (!(in >> token2)) {
-			std::cerr << "Error: Unexpected end of file while reading constraints." << std::endl;
-			break;
-		}
-
-		if (token1 == ">=" || token1 == "<=" || token2 == "=") {
-			if (token1 != ">=" && token1 != "<=") {
-				Abort("Only >= or <= is supported", 1);
-			}
-			rhs = std::stoi(token2);
-			c.set_rhs(rhs);
-			std::cout << "Constraint before normalization \n";
-			c.print_constraint();
-
-			normalizePBConstraint(c, token1 == ">=");
-			if(c.constraint_size() > 1)
-				add_constraint(c, 0, 1);
-			else if (c.constraint_size() == 1) {
-				add_unary_constraint(c);
-			}
-			c.print_constraint();
-			c.reset_coefficients();
-			c.reset_literals();
-			c.reset_terms();
-			i++;
-		}
-		else {
-			coef = std::stoi(token1);
-			lit = std::stoi(token2.substr(1));
-			if (lit > vars) {
-				Abort("Literal index larger than declared on the first line", 1);
-			}
-			if (VarDecHeuristic == VAR_DEC_HEURISTIC::MINISAT) {
-				bumpVarScore(lit);
-			}
-			c.insert_term(coef, lit);
-			var_to_pb_constraints[lit].push_back(i);
-			var_occurrence_count[lit]++;
-			if (ValDecHeuristic == VAL_DEC_HEURISTIC::LITSCORE) {
-				bumpLitScore(v2l(lit));
-			}
-		}
+		processConstraint(line, constraint_index);
+		constraint_index++;
 	}
 
-	if (VarDecHeuristic == VAR_DEC_HEURISTIC::MINISAT) {
-		reset_iterators();
-	}
-	std::cout << "Read " << constraints << " constraints in " << cpuTime() - begin_time << " secs." << std::endl;
-	std::cout << "Solving..." << std::endl;
+	if (VarDecHeuristic == VAR_DEC_HEURISTIC::MINISAT) reset_iterators();
+	cout << "Read " << constraint_index << " constraints in " << cpuTime() - begin_time << " secs." << endl << "Solving..." << endl;
 }
 
+// Helper method to process a single constraint line
+void PBSolver::processConstraint(const std::string& line, int& constraint_index) {
+	Constraint c;
+	size_t op_pos = std::string::npos;
+	std::string constraint_op;
 
+	// Find the constraint operator
+	for (const std::string& op : { ">=", "<=", "=" }) {
+		size_t temp_pos = line.find(op);
+		if (temp_pos != std::string::npos && (op_pos == std::string::npos || temp_pos < op_pos)) {
+			op_pos = temp_pos;
+			constraint_op = op;
+		}
+	}
+
+	if (op_pos == std::string::npos) {
+		std::cout << "No operator found in constraint: " << line << std::endl;
+		return;
+	}
+
+	// Get the RHS part (everything after the operator, up to semicolon or end)
+	size_t semicolon_pos = line.find(';');
+	std::string rhs_str = line.substr(op_pos + constraint_op.length(),
+		(semicolon_pos != std::string::npos) ?
+		semicolon_pos - (op_pos + constraint_op.length()) :
+		std::string::npos);
+	rhs_str = rhs_str.substr(0, rhs_str.find_first_of(";"));
+	rhs_str = rhs_str.substr(rhs_str.find_first_not_of(" \t"));
+	int rhs = std::stoi(rhs_str);
+
+	// Get the LHS part (everything before the operator)
+	std::string lhs_str = line.substr(0, op_pos);
+	std::istringstream lhs_stream(lhs_str);
+
+	// Process terms in the form "+1 x1" or "-1 x1 x2"
+	std::string token;
+	while (lhs_stream >> token) {
+		// Check if token is a coefficient
+		int coef;
+		try {
+			coef = std::stoi(token);
+		}
+		catch (std::invalid_argument&) {
+			std::cout << "Invalid coefficient: " << token << std::endl;
+			continue;
+		}
+
+		// Read variables following this coefficient
+		std::vector<int> term_vars;
+		while (lhs_stream.peek() == ' ' && lhs_stream >> token && token[0] == 'x') {
+			int var;
+			try {
+				var = std::stoi(token.substr(1));
+			}
+			catch (std::invalid_argument&) {
+				std::cout << "Invalid variable: " << token << std::endl;
+				continue;
+			}
+			term_vars.push_back(var);
+			// Register this variable with the constraint
+			var_to_pb_constraints[var].push_back(constraint_index);
+			var_occurrence_count[var]++;
+		}
+
+		// If token doesn't start with 'x', put it back in the stream
+		if (!token.empty() && token[0] != 'x') {
+			for (auto it = token.rbegin(); it != token.rend(); ++it) {
+				lhs_stream.putback(*it);
+			}
+			lhs_stream.putback(' ');
+		}
+
+		// Handle the term based on number of variables
+		if (term_vars.size() == 1) {
+			c.insert_term(coef, term_vars[0]);
+			if (ValDecHeuristic == VAL_DEC_HEURISTIC::LITSCORE) {
+				bumpLitScore(v2l(term_vars[0]));
+			}
+			if (VarDecHeuristic == VAR_DEC_HEURISTIC::MINISAT) {
+				bumpVarScore(term_vars[0]);
+			}
+		}
+		else if (term_vars.size() > 1) {
+			c.insert_term(coef, term_vars[0]);
+			if (VarDecHeuristic == VAR_DEC_HEURISTIC::MINISAT) {
+				bumpVarScore(term_vars[0]);
+			}
+			std::cout << "Simplified nonlinear term with " << term_vars.size() << " variables" << std::endl;
+		}
+	}
+
+	// Set the right-hand-side value and initialize LHS to 0
+	c.set_rhs(rhs);
+	c.set_lhs(0);
+	std::cout << "Constraint #" << constraint_index << " before normalization: ";
+	c.print_constraint();
+
+	// Normalize and add the constraint based on the operator.
+	if (constraint_op == "=") {
+		// For "=" split into two constraints.
+		// Process the ≤ part:
+		Constraint c_leq = c;
+		normalizePBConstraint(c_leq, false); // normalize as ≤
+		if (c_leq.constraint_size() == 1) {
+			add_unary_constraint(c_leq);
+			S.nconstraints += 1;
+			S.noldconstraints += 1;
+			std::cout << "After normalization (<=, unary): ";
+			c_leq.print_constraint();
+		}
+		else if (c_leq.constraint_size() > 1) {
+			add_constraint(c_leq, 0, 1);
+			S.nconstraints += 1;
+			S.noldconstraints += 1;
+			std::cout << "After normalization (<=): ";
+			c_leq.print_constraint();
+		}
+
+		// Process the ≥ part:
+		Constraint c_geq = c;
+		constraint_index++;
+		std::vector<pair<int, int >> terms = c_geq.get_terms();
+		for (auto& term : terms ) {
+			var_to_pb_constraints[term.second].push_back(constraint_index);
+		}
+		normalizePBConstraint(c_geq, true);  // normalize as ≥
+		if (c_geq.constraint_size() == 1) {
+			add_unary_constraint(c_geq);
+			std::cout << "After normalization (>=, unary): ";
+			c_geq.print_constraint();
+		}
+		else if (c_geq.constraint_size() > 1) {
+			add_constraint(c_geq, 0, 1);
+			std::cout << "After normalization (>=): ";
+			c_geq.print_constraint();
+		}
+	}
+	else {
+		// For ≥ or ≤, just normalize and add.
+		if (constraint_op == ">=") {
+			normalizePBConstraint(c, true);
+		}
+		else if (constraint_op == "<=") {
+			normalizePBConstraint(c, false);
+		}
+		if (c.constraint_size() == 1) {
+			add_unary_constraint(c);
+			std::cout << "After normalization (unary): ";
+			c.print_constraint();
+		}
+		else if (c.constraint_size() > 1) {
+			add_constraint(c, 0, 1);
+			std::cout << "After normalization: ";
+			c.print_constraint();
+		}
+		else {
+			std::cout << "Skipping empty constraint" << std::endl;
+		}
+	}
+}
 
 
 void PBSolver::add_constraint(Constraint& c, int l, int r) {
@@ -469,7 +292,7 @@ void PBSolver::add_constraint(Constraint& c, int l, int r) {
 	int loc = static_cast<int>(pbConstraints.size());  // the first is in location 0 in cnf
 	int size = c.constraint_size();
 	if (c.get_rhs() < 0)
-		unsat = true; 
+		unsat = true;
 	//std::unordered_set<int> watches_set = findWatchesSet(c);
 	//for (int lit : watches_set) {
 	//	watches[lit].push_back(loc);
@@ -545,6 +368,9 @@ int getCoefficient(const std::vector<std::pair<int, int>>& constraint, int var) 
 
 
 inline void PBSolver::assert_lit(Lit l) {
+	if (l == 19) {
+		std::cout << "19 \n";
+	}
 	trail_pb.push_back(l);
 	int var = l2v(l);
 	if (Neg(l)) prev_state_pb[var] = state_pb[var] = VarState::V_FALSE; else prev_state_pb[var] = state_pb[var] = VarState::V_TRUE;
@@ -701,8 +527,8 @@ Apply_decision:
 	}
 
 	assert_lit(best_lit);
-	asserted_lit = negate(best_lit);
 	++num_decisions;
+	asserted_lit = ::negate(best_lit);
 	for (int constraint_idx : var_to_pb_constraints[l2v(best_lit)]) {
 		Constraint& pbc = pbConstraints[constraint_idx];
 		if (pbc.get_lhs() > pbc.get_rhs()) {
@@ -710,10 +536,9 @@ Apply_decision:
 			return SolverState::CONFLICT;
 		}
 	}
+
 	return SolverState::UNDEF;
 }
-
-
 
 inline PBConstraintState Constraint::next_not_false(bool is_left_watch, Lit other_watch, bool binary, int& loc) {
 	if (verbose_now()) cout << "pb_next_not_false" << endl;
@@ -758,7 +583,7 @@ inline PBConstraintState Constraint::next_not_false(bool is_left_watch, Lit othe
 	}
 	Assert(coeff_other != -1); // Must find other_watch in the clause.
 
-	// Check if `other_watch` must be set to false to satisfy the constraint
+	// Check if other_watch must be set to false to satisfy the constraint
 	switch (S.lit_state(other_watch)) {
 	case LitState::L_UNSAT:
 		if (verbose_now()) {
@@ -767,8 +592,8 @@ inline PBConstraintState Constraint::next_not_false(bool is_left_watch, Lit othe
 		}
 		return PBConstraintState::PB_UNSAT;
 	case LitState::L_UNASSIGNED:
-		if (!other_watch || !binary)  // If setting `other_watch` to false is necessary
-			return PBConstraintState::PB_UNIT;  // Must set `other_watch = false`
+		if (!other_watch || !binary)  // If setting other_watch to false is necessary
+			return PBConstraintState::PB_UNIT;  // Must set other_watch = false
 		return PBConstraintState::PB_UNDEF;  // Unresolved, keep watching
 	case LitState::L_SAT:
 		return PBConstraintState::PB_SAT;
@@ -809,12 +634,12 @@ SolverState PBSolver::BCP() {
 
 	if (unsat)
 		return SolverState::UNSAT;
-	
+
 	while (qhead < trail_pb.size()) {
 		Lit lit = trail_pb[qhead];
-		Lit NegatedLit = negate(trail_pb[qhead++]);
+		Lit NegatedLit = ::negate(trail_pb[qhead++]);
 		Assert(lit_state(NegatedLit) == LitState::L_UNSAT);
-		if (verbose_now()) cout << "propagating " << l2rl(negate(NegatedLit)) << endl;
+		if (verbose_now()) cout << "propagating " << l2rl(::negate(NegatedLit)) << endl;
 
 		vector<int> new_watch_list; // The original watch list minus those clauses that changed a watch. The order is maintained. 
 		int new_watch_list_idx = watches[NegatedLit].size() - 1; // Since we are traversing the watch_list backwards, this index goes down.
@@ -831,17 +656,17 @@ SolverState PBSolver::BCP() {
 			{
 				if (verbose_now()) print_state();
 				if (verbose_now()) cout << "conflict" << endl;
-				if (dl_pb == 0 || unsat) return SolverState::UNSAT;
+				/*dl_pb == 0 ||*/ if ( unsat) return SolverState::UNSAT;
 				conflicting_constraint_idx = *it;  // this will also break the loop
 				if (conflicting_constraint_idx >= 0) return SolverState::CONFLICT;
-				
-			
+
+
 			}
 			for (size_t i = 0; i < c.constraint_size(); ++i) {
-				if ((coefficients[i] >= remaining_slack) && (lit_state(literals[i]) == LitState::L_UNASSIGNED))  {
+				if ((coefficients[i] >= remaining_slack) && (lit_state(literals[i]) == LitState::L_UNASSIGNED)) {
 					std::cout << "propagating " << l2rl(literals[i]) << " with coeff " << coefficients[i] << std::endl;
 					state_pb[l2v(literals[i])] = Neg(literals[i]) ? VarState::V_TRUE : VarState::V_FALSE;
-					assert_lit(negate(literals[i]));
+					assert_lit(::negate(literals[i]));
 					antecedent[l2v(literals[i])] = *it;
 				}
 			}
@@ -920,19 +745,19 @@ int PBSolver::analyze(const Constraint& conflictConstraint) {
 	Lit u;
 	Var v;
 
-	// 🔹 Step 1: Compute a Minimal Conflict Subset
+	// Step 1: Compute a Minimal Conflict Subset
 	Constraint learned_constraint = findConflictSubset(conflictConstraint);
 
-	// 🔹 Step 2: Extract Variables from the Conflict Clause
+	// Step 2: Extract Variables from the Conflict Clause
 	for (auto& term : learned_constraint.get_terms()) {
-		Lit lit = term.second;
-		v = l2v(lit);
+		Lit lit = term.second;  // This is already a literal
+		v = l2v(lit);           // Convert to variable for tracking
 		var_to_pb_constraints[v].push_back(pbConstraints.size());
 		if (!marked[v]) {
 			marked[v] = true;
 			if (dlevel_pb[v] == dl_pb) ++resolve_num;
 			else {
-				new_constraint.insert_term(term.first, term.second);
+				new_constraint.insert_term(term.first, lit);  // Keep the original literal
 				int c_dl = dlevel_pb[v];
 				if (c_dl > bktrk) {
 					bktrk = c_dl;
@@ -942,8 +767,7 @@ int PBSolver::analyze(const Constraint& conflictConstraint) {
 		}
 	}
 
-
-	// 🔹 Step 3: Learn a New PB Constraint
+	// Step 3: Learn a New PB Constraint
 	if (learned_constraint.constraint_size() == 1)
 		add_unary_constraint(learned_constraint);
 	else
@@ -959,7 +783,6 @@ int PBSolver::analyze(const Constraint& conflictConstraint) {
 	return bktrk;
 }
 
-
 void PBSolver::backtrack(int k) {
 	if (verbose_now()) cout << "backtrack" << endl;
 	// local restart means that we restart if the number of conflicts learned in this 
@@ -974,20 +797,23 @@ void PBSolver::backtrack(int k) {
 		Var v = l2v(*it);
 		if (dlevel_pb[v]) { // we need the condition because of learnt unary clauses. In that case we enforce an assignment with dlevel = 0.
 			state_pb[v] = VarState::V_UNASSIGNED;
+			antecedent[v] = -1;
 			for (int constraint_idx : var_to_pb_constraints[v]) {
 				if (constraint_idx >= noldconstraints) continue; // we do not want to backtrack on the learned constraints.
 				Constraint& pbc = pbConstraints[constraint_idx];
 				int lhs = pbc.get_lhs();
+				if (pbc.get_rhs() == 0)
+					continue;
 				std::vector<std::pair<int, int>> terms = pbc.get_terms();
 				for (auto& term : terms) {
-					if (term.second == *it){
+					if (term.second == *it) {
 						lhs -= term.first;
 						pbc.set_lhs(lhs);
 						break;
 					}
 				}
 			}
-			
+
 			if (VarDecHeuristic == VAR_DEC_HEURISTIC::MINISAT) m_curr_activity = max(m_curr_activity, m_activity[v]);
 		}
 	}
@@ -996,6 +822,8 @@ void PBSolver::backtrack(int k) {
 	trail_pb.erase(trail_pb.begin() + separators[k + 1], trail_pb.end());
 	qhead = trail_pb.size();
 	dl_pb = k;
+	if (dl_pb == 0)
+		std::cout << "lll" ;
 	assert_lit(asserted_lit);
 	for (size_t i = 0; i < noldconstraints; ++i) {
 		Constraint& c = pbConstraints[i];
@@ -1021,7 +849,7 @@ void PBSolver::validate_assignment() {
 			cout << "fail on constraint: ";
 			it->print_constraint();
 			cout << endl;
-			for (clause_it it_c = it->get_literals().begin(); it_c != it->get_literals().end() ; ++it_c)
+			for (clause_it it_c = it->get_literals().begin(); it_c != it->get_literals().end(); ++it_c)
 				cout << *it_c << " (" << (int)lit_state(*it_c) << ") ";
 			cout << endl;
 			Abort("Assignment validation failed", 3);
@@ -1099,7 +927,7 @@ SolverState PBSolver::_solve() {
 				int bktrk = analyze(pbConstraints[conflicting_constraint_idx]);
 				backtrack(bktrk);
 			}
-			else 
+			else
 				break;
 		}
 		res = decide();
@@ -1111,7 +939,7 @@ void PBSolver::normalizePBConstraint(Constraint& pb_constraint, bool bigger) {
 	Constraint newConstraint;
 	std::vector<pair<int, int >> terms = pb_constraint.get_terms();
 	int rhs = pb_constraint.get_rhs();
-	// 🔹 Step 1: Flip inequality if RHS is negative
+	//Step 1: Flip inequality if RHS is negative
 	if (bigger) {
 		rhs *= -1;  // Convert RHS to positive
 		for (auto& term : terms) {
@@ -1119,7 +947,7 @@ void PBSolver::normalizePBConstraint(Constraint& pb_constraint, bool bigger) {
 		}
 	}
 
-	// 🔹 Step 2: Convert each term correctly
+	//Step 2: Convert each term correctly
 	pb_constraint.reset_terms();
 	pb_constraint.reset_coefficients();
 	pb_constraint.reset_literals();
@@ -1128,7 +956,7 @@ void PBSolver::normalizePBConstraint(Constraint& pb_constraint, bool bigger) {
 		int var = term.second;
 
 		if (coeff < 0) {
-			// 🔥 Apply transformation: x_i = 1 - x̅_i
+			//Apply transformation: x_i = 1 - x̅_i
 			coeff = -coeff;
 			rhs += coeff;  // Adjust RHS by subtracting the negated term
 			var = v2l(-var);
@@ -1138,7 +966,7 @@ void PBSolver::normalizePBConstraint(Constraint& pb_constraint, bool bigger) {
 		pb_constraint.set_rhs(rhs);
 	}
 	std::cout << "RHS after normalization " << " " << pb_constraint.get_rhs() << "\n";
-	
+
 
 }
 
@@ -1151,34 +979,37 @@ Constraint PBSolver::findConflictSubset(Constraint constraint) {
 
 	std::cout << "Finding minimal conflict set for Constraint with RHS: " << rhs << "\n";
 
-	// 🔹 Sort terms by coefficient value (highest first)
+	// Sort terms by coefficient value (highest first)
 	std::vector<std::pair<int, int>> sorted_terms = constraint.get_terms();
 	std::sort(sorted_terms.begin(), sorted_terms.end(), [](auto& a, auto& b) {
 		return abs(a.first) > abs(b.first);
 		});
 
-	// 🔹 Add literals contributing to the conflict
+	// Add literals contributing to the conflict
 	for (const auto& term : sorted_terms) {
 		int coeff = term.first;
-		Lit lit = term.second;
-		int var = l2v(lit);
+		int lit = term.second;  // This is already a literal (doubled index)
+		int var = l2v(lit);     // Get the variable from the literal
 
-		if ((state_pb[var] == VarState::V_TRUE &&  !(Neg(lit))) ||
-			(state_pb[var] == VarState::V_FALSE && (Neg(lit)))) {
+		// Check if this variable contributes to the conflict based on its assignment
+		if ((state_pb[var] == VarState::V_TRUE && !Neg(lit)) ||
+			(state_pb[var] == VarState::V_FALSE && Neg(lit))) {
 
-			conflictConstraint.insert_term(1,lit);
+			// Add this term to the conflict constraint (with coefficient 1)
+			conflictConstraint.insert_term(1, lit);  // Keep the original literal
 			accumulated_sum += coeff;
 			rhs_c += 1;
 
-
 			std::cout << "Adding x" << lit << "\n";
 
+			// Stop once we've found enough terms to explain the conflict
 			if (accumulated_sum > rhs) {
 				break;
 			}
 		}
 	}
 
+	// Set the RHS of the conflict constraint
 	conflictConstraint.set_rhs(rhs_c - 1);
 
 	std::cout << "Learned PB Conflict Constraint: ";
@@ -1190,27 +1021,37 @@ Constraint PBSolver::findConflictSubset(Constraint constraint) {
 	return conflictConstraint;
 }
 
+
 #pragma endregion solving
+
+
 
 
 /******************  main ******************************/
 
-int main(int argc, char** argv){
+int main(int argc, char** argv) {
 	begin_time = cpuTime();
 	parse_options(argc, argv);
-	
+
 	/*std::ifstream file("real_test.opb");*/
-	std::ifstream file("data4.opb");
-	/*std::ifstream file("normalized-fir10_trarea_ac.opb");*/
-	if (!file) {
-		std::cerr << "Error: Cannot open input.pb file!\n";
-		return 1;
-	}
-// TODO : watch on the new constraint and the conflict 
+	//std::ifstream file("data4.opb"); //usat
+	//std::ifstream file("normalized-fir10_trarea_ac.opb");
+	/*std::ifstream file("normalized-dbst_v30_e350_d15_mw10_1.opb.PB06.opb");*/ //usat
+	//std::ifstream file("normalized-cuww1.opb");
+	/*std::ifstream file("normalized-11array_ineq5.opb");*/
+	//std::ifstream file("normalized-11diag_spec_greater.opb");
+	/*std::ifstream file("normalized-15array_ineq10.opb");*/
+	//std::ifstream file("normalized-11diag_spec_less.opb");
+	/*std::ifstream file("normalized-12array_alg_ineq10.opb");*/ //UNSAT
+	//std::ifstream file("normalized-15array_diag_greater.opb");
+	/*std::ifstream file("normalized-air01.0.s.opb");*/  // SAT
+	//std::ifstream file("normalized-robin14.opb");
+	// TODO : watch on the new constraint and the conflict 
+	/*std::ifstream file("normalized-army9.12bt.opb");*/
+	std::ifstream file("normalized-blast-floppy1-8.ucl.opb");
 	S.read_pb(file);
 	file.close();
-	S.solve();	
+	S.solve();
 
 	return 0;
 }
-
